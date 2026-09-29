@@ -21,6 +21,13 @@ dev = [
     "pytest>=9.1.1",
 ]
 
-[tool.ruff]
+[tool.ruff.lint]
+# Enable Pyflakes (`F`), pycodestyle (`E`), and isort (`I`)
+select = ["E", "F", "I"]
+ignore = ["E501"]
+
+[tool.ruff.lint.isort]
+# You can add custom isort rules here if needed
+# known-first-party = ["my_custom_module"]
 
 

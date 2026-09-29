@@ -2,9 +2,8 @@ import os
 import shutil
 
 import pytest
-from PIL import Image
-
 from ml_core.clip_matcher import ClipMatcher
+from PIL import Image
 
 TEST_DB_PATH = "./pytest_chroma_db"
 
