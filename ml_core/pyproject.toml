@@ -7,6 +7,7 @@ requires-python = ">=3.12"
 dependencies = [
     "chromadb>=1.5.9",
     "pillow>=12.3.0",
+    "ruff>=0.16.9",
     "torch>=2.14.0",
     "transformers>=5.17.0",
 ]
@@ -14,4 +15,12 @@ dependencies = [
 [build-system]
 requires = ["uv_build>=0.12.20,<0.13.0"]
 build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
+
+[tool.ruff]
+
 

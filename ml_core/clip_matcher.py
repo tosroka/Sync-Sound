@@ -3,8 +3,6 @@ import torch
 from PIL import Image
 from transformers import CLIPModel, CLIPProcessor
 
-from .matcher import TagMatcher
-
 
 class ClipMatcher:
     """
@@ -46,7 +44,7 @@ class ClipMatcher:
                 batch_tags = missing_tags[i : i + batch_size]
 
                 # Calculate embeddings
-                inputs = self.processor(
+                inputs = self.processor.tokenizer(
                     text=batch_tags, return_tensors="pt", padding=True
                 ).to(self.device)
                 with torch.no_grad():
@@ -84,7 +82,7 @@ class ClipMatcher:
         # 2. Load and embed the images
         images = [Image.open(path).convert("RGB") for path in image_paths]
 
-        inputs = self.processor(images=images, return_tensors="pt", padding=True).to(
+        inputs = self.processor.image_processor(images=images, return_tensors="pt").to(
             self.device
         )
         with torch.no_grad():
