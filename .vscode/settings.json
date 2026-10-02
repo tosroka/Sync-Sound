@@ -1,0 +1,9 @@
+{
+    "python.testing.pytestArgs": [
+        "ml_core/tests"
+    ],
+    "python.testing.unittestEnabled": false,
+    "python.testing.pytestEnabled": true,
+    "python.defaultInterpreterPath": "${workspaceFolder}/ml_core/.venv/bin/python",
+    "python.envFile": "${workspaceFolder}/.env"
+}
