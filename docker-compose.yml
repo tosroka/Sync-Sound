@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  ml-core:
+    build:
+      context: ./ml_core
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      # Mount a volume so the downloaded HuggingFace models (CLIP) and ChromaDB are cached between restarts
+      - ml-core-data:/app/chroma_db
+      - huggingface-cache:/root/.cache/huggingface
+    env_file:
+      - .env
+
+volumes:
+  ml-core-data:
+  huggingface-cache:
