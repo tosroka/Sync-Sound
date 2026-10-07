@@ -1,46 +1,81 @@
 <template>
-  <div class="container">
-    <h1>Music Recommendation from Video</h1>
+  <div class="app-wrapper">
+    <header class="app-header">
+      <div class="header-content">
+        <h1>Sync&nbsp;<span>Sound</span></h1>
+        <p>AI-powered music recommendation for your videos</p>
+      </div>
+    </header>
     
-    <div class="upload-section">
-      <input type="file" accept="video/*" @change="onVideoSelected" />
-      <div v-if="videoFile" class="file-info">
-        Selected: {{ videoFile.name }} ({{ (videoFile.size / 1024 / 1024).toFixed(2) }} MB)
+    <main class="container">
+      <div class="card upload-section">
+        <div class="upload-icon">📹</div>
+        <h2>Upload Video</h2>
+        <p class="upload-hint">Select a local video file to get started</p>
+        
+        <label class="file-label">
+          <input type="file" accept="video/*" @change="onVideoSelected" class="file-input" />
+          <span>Choose File</span>
+        </label>
+        
+        <div v-if="videoFile" class="file-info fade-in">
+          <span class="file-name">{{ videoFile.name }}</span> 
+          <span class="file-size">({{ (videoFile.size / 1024 / 1024).toFixed(2) }} MB)</span>
+        </div>
       </div>
-    </div>
 
-    <div class="actions">
-      <button :disabled="!videoFile || isProcessing" @click="startProcess">
-        {{ isProcessing ? 'Processing...' : 'Find Matches' }}
-      </button>
-      <select v-model="selectedModel" :disabled="isProcessing">
-        <option value="clip">Local CLIP</option>
-        <option value="gemini">Gemini API</option>
-      </select>
-    </div>
+      <div class="card controls-section">
+        <div class="actions">
+          <div class="model-select-wrapper">
+            <label for="modelSelect">AI Engine:</label>
+            <select id="modelSelect" v-model="selectedModel" :disabled="isProcessing" class="styled-select">
+              <option value="clip">Local CLIP (Fast)</option>
+              <option value="gemini">Gemini API (Smart)</option>
+            </select>
+          </div>
+          
+          <button class="primary-btn" :disabled="!videoFile || isProcessing" @click="startProcess">
+            <span v-if="isProcessing" class="spinner"></span>
+            {{ isProcessing ? 'Analyzing...' : 'Find Matches' }}
+          </button>
+        </div>
 
-    <div v-if="statusMessage" class="status">
-      Status: {{ statusMessage }}
-    </div>
-
-    <!-- Hidden canvas for frame extraction -->
-    <canvas ref="canvasRef" style="display: none;"></canvas>
-
-    <div v-if="extractedFrames.length > 0" class="frames-preview">
-      <h3>Extracted Frames</h3>
-      <div class="frames-grid">
-        <img v-for="(frame, idx) in extractedFrames" :key="idx" :src="frame" class="frame-img" />
+        <div v-if="statusMessage" class="status-bar slide-down">
+          <div class="status-indicator" :class="{ processing: isProcessing, done: statusMessage === 'Done!' }"></div>
+          {{ statusMessage }}
+        </div>
       </div>
-    </div>
 
-    <div v-if="results.length > 0" class="results-section">
-      <h2>Recommended Tags / Songs</h2>
-      <ul>
-        <li v-for="(tag, idx) in results" :key="idx">
-          {{ idx + 1 }}. {{ tag }}
-        </li>
-      </ul>
-    </div>
+      <!-- Hidden canvas for frame extraction -->
+      <canvas ref="canvasRef" style="display: none;"></canvas>
+
+      <div v-if="results.length > 0" class="card results-section fade-in">
+        <h2>🎵 Recommended Tags / Songs</h2>
+        <ul class="results-list">
+          <li v-for="(tag, idx) in results" :key="idx" class="result-item">
+            <span class="result-rank">#{{ idx + 1 }}</span>
+            <span class="result-name">{{ tag }}</span>
+          </li>
+        </ul>
+      </div>
+
+      <!-- Debug Panel -->
+      <div class="card debug-section" v-if="extractedFrames.length > 0">
+        <button class="debug-toggle" @click="showDebug = !showDebug">
+          {{ showDebug ? 'Hide' : 'Show' }} Developer Debug Info
+        </button>
+        
+        <div v-show="showDebug" class="debug-content slide-down">
+          <h3>Extracted Frames (Sent to Backend)</h3>
+          <div class="frames-grid">
+            <div v-for="(frame, idx) in extractedFrames" :key="idx" class="frame-wrapper">
+              <img :src="frame" class="frame-img" />
+              <span class="frame-label">Frame {{ idx + 1 }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
   </div>
 </template>
 
@@ -54,6 +89,7 @@ const extractedFrames = ref([])
 const results = ref([])
 const selectedModel = ref('clip')
 const canvasRef = ref(null)
+const showDebug = ref(false)
 
 const API_URL = 'http://localhost:8000'
 
@@ -64,6 +100,7 @@ const onVideoSelected = (event) => {
     extractedFrames.value = []
     results.value = []
     statusMessage.value = ''
+    showDebug.value = false
   }
 }
 
@@ -189,65 +226,354 @@ const startProcess = async () => {
 }
 </script>
 
+<style>
+/* Global resets for the app */
+body {
+  margin: 0;
+  background-color: #f4f7f6;
+  color: #333;
+}
+</style>
+
 <style scoped>
-.container {
-  max-width: 800px;
-  margin: 0 auto;
-  padding: 2rem;
-  font-family: system-ui, -apple-system, sans-serif;
+.app-wrapper {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  min-height: 100vh;
 }
-.upload-section {
-  margin: 2rem 0;
-  padding: 2rem;
-  border: 2px dashed #ccc;
-  border-radius: 8px;
+
+.app-header {
+  background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
+  color: white;
+  padding: 3rem 1rem;
   text-align: center;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  margin-bottom: -3rem;
 }
+
+.header-content h1 {
+  margin: 0;
+  font-size: 2.5rem;
+  font-weight: 800;
+  letter-spacing: -0.05em;
+}
+
+.header-content h1 span {
+  color: #fbbf24;
+}
+
+.header-content p {
+  margin-top: 0.5rem;
+  opacity: 0.9;
+  font-size: 1.1rem;
+}
+
+.container {
+  max-width: 700px;
+  margin: 0 auto;
+  padding: 0 1rem 4rem;
+  position: relative;
+  z-index: 10;
+}
+
+.card {
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  padding: 2rem;
+  margin-bottom: 1.5rem;
+}
+
+.upload-section {
+  text-align: center;
+  border: 2px dashed #e5e7eb;
+  transition: border-color 0.3s ease;
+}
+
+.upload-section:hover {
+  border-color: #a855f7;
+}
+
+.upload-icon {
+  font-size: 3rem;
+  margin-bottom: 0.5rem;
+}
+
+.upload-section h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1.25rem;
+}
+
+.upload-hint {
+  color: #6b7280;
+  margin-bottom: 1.5rem;
+  font-size: 0.95rem;
+}
+
+.file-input {
+  display: none;
+}
+
+.file-label {
+  display: inline-block;
+  background-color: #f3f4f6;
+  color: #4b5563;
+  padding: 0.75rem 1.5rem;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.file-label:hover {
+  background-color: #e5e7eb;
+}
+
+.file-info {
+  margin-top: 1rem;
+  font-size: 0.9rem;
+  color: #10b981;
+  font-weight: 500;
+}
+
+.file-size {
+  color: #6b7280;
+  font-weight: normal;
+}
+
+.controls-section {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
 .actions {
   display: flex;
-  gap: 1rem;
-  margin-bottom: 2rem;
+  flex-direction: column;
+  gap: 1.25rem;
 }
-button {
-  padding: 0.5rem 1rem;
-  background: #4CAF50;
+
+@media (min-width: 500px) {
+  .actions {
+    flex-direction: row;
+    align-items: flex-end;
+    justify-content: space-between;
+  }
+}
+
+.model-select-wrapper {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+
+.model-select-wrapper label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #4b5563;
+  margin-bottom: 0.4rem;
+}
+
+.styled-select {
+  padding: 0.75rem 1rem;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background-color: #f9fafb;
+  font-size: 1rem;
+  color: #1f2937;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.styled-select:focus {
+  border-color: #6366f1;
+}
+
+.primary-btn {
+  background: #6366f1;
   color: white;
   border: none;
-  border-radius: 4px;
-  cursor: pointer;
+  border-radius: 8px;
+  padding: 0.75rem 2rem;
   font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-width: 160px;
 }
-button:disabled {
-  background: #ccc;
+
+.primary-btn:hover:not(:disabled) {
+  background: #4f46e5;
+  transform: translateY(-1px);
+}
+
+.primary-btn:disabled {
+  background: #9ca3af;
   cursor: not-allowed;
 }
-select {
-  padding: 0.5rem;
-  border-radius: 4px;
-  font-size: 1rem;
+
+.spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255,255,255,0.3);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
 }
-.status {
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.status-bar {
+  background-color: #f0fdf4;
+  color: #166534;
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  border: 1px solid #bbf7d0;
+}
+
+.status-indicator {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background-color: #10b981;
+}
+
+.status-indicator.processing {
+  background-color: #f59e0b;
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.7); }
+  70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(245, 158, 11, 0); }
+  100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); }
+}
+
+.results-section h2 {
+  margin-top: 0;
+  margin-bottom: 1.5rem;
+  font-size: 1.4rem;
+  color: #111827;
+}
+
+.results-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.result-item {
+  display: flex;
+  align-items: center;
   padding: 1rem;
-  background: #f0f8ff;
-  border-radius: 4px;
-  margin-bottom: 2rem;
-  font-weight: bold;
+  background-color: #f9fafb;
+  border-radius: 8px;
+  border-left: 4px solid #8b5cf6;
 }
+
+.result-rank {
+  font-weight: 700;
+  color: #8b5cf6;
+  margin-right: 1rem;
+  width: 2rem;
+}
+
+.result-name {
+  font-size: 1.05rem;
+  font-weight: 500;
+  color: #1f2937;
+}
+
+.debug-section {
+  background-color: #fdfbf7;
+  border: 1px solid #e5e7eb;
+  padding: 1rem;
+}
+
+.debug-toggle {
+  background: none;
+  border: none;
+  color: #6b7280;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0.5rem 0;
+  width: 100%;
+  text-align: left;
+}
+
+.debug-toggle:hover {
+  color: #374151;
+}
+
+.debug-content {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid #e5e7eb;
+}
+
+.debug-content h3 {
+  font-size: 1rem;
+  margin-top: 0;
+  color: #4b5563;
+}
+
 .frames-grid {
   display: flex;
   gap: 1rem;
   overflow-x: auto;
   padding-bottom: 1rem;
 }
-.frame-img {
-  height: 100px;
-  border-radius: 4px;
-  object-fit: cover;
+
+.frame-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  align-items: center;
+  min-width: 120px;
 }
-.results-section {
-  background: #f9f9f9;
-  padding: 1.5rem;
-  border-radius: 8px;
-  margin-top: 2rem;
+
+.frame-img {
+  height: 80px;
+  border-radius: 6px;
+  object-fit: cover;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.frame-label {
+  font-size: 0.75rem;
+  color: #6b7280;
+}
+
+/* Animations */
+.fade-in {
+  animation: fadeIn 0.4s ease-in-out;
+}
+
+.slide-down {
+  animation: slideDown 0.3s ease-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 </style>
