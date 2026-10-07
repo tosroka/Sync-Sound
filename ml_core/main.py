@@ -64,7 +64,7 @@ app = FastAPI(lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allows all origins for local testing
+    allow_origins=["http://localhost:3000"],  # Standard local frontend ports
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -122,10 +122,12 @@ async def process_video_frames(task_id: str, image_paths: List[str], model_type:
         TASKS[task_id]["status"] = "ERROR"
         TASKS[task_id]["error"] = str(e)
     finally:
-        # We can clean up the temporary image files here if we aren't uploading to MinIO
-        for path in image_paths:
-            if os.path.exists(path):
-                os.remove(path)
+        # Clean up the entire temporary directory securely
+        import shutil
+        if image_paths:
+            temp_dir = os.path.dirname(image_paths[0])
+            if os.path.exists(temp_dir):
+                shutil.rmtree(temp_dir, ignore_errors=True)
 
 @app.post("/tasks")
 async def create_task(
@@ -134,45 +136,60 @@ async def create_task(
     model: str = Form("clip")
 ):
     import hashlib
+    import tempfile
+    import shutil
+    
+    # Enforce basic memory limits on caches (evict oldest 100 if > 1000)
+    if len(CACHE) > 1000:
+        for k in list(CACHE.keys())[:100]: del CACHE[k]
+    if len(TASKS) > 1000:
+        for k in list(TASKS.keys())[:100]: del TASKS[k]
+
+    task_id = str(uuid.uuid4())
+    temp_dir = tempfile.mkdtemp(prefix="ml_core_images_")
+    
     hasher = hashlib.sha256()
     hasher.update(model.encode('utf-8'))
     
-    # Read all images into memory to compute hash
-    image_contents = []
-    for img in images:
-        content = await img.read()
-        hasher.update(content)
-        image_contents.append(content)
-        
-    cache_key = hasher.hexdigest()
-    task_id = str(uuid.uuid4())
-    
-    if cache_key in CACHE:
-        # Cache hit! Create a completed task immediately
-        TASKS[task_id] = {
-            "status": "COMPLETED",
-            "results": CACHE[cache_key],
-            "error": None
-        }
-        return {"task_id": task_id}
-        
-    TASKS[task_id] = {"status": "RUNNING", "results": [], "error": None, "cache_key": cache_key}
-    
-    # Save uploaded images to a temporary local storage
-    # In a real app with MinIO, we would upload them there and pass URLs/paths
-    os.makedirs("/tmp/ml_core_images", exist_ok=True)
     image_paths = []
     
-    for idx, content in enumerate(image_contents):
-        # We assume they are image files
-        file_path = f"/tmp/ml_core_images/{task_id}_{idx}.jpg"
-        with open(file_path, "wb") as buffer:
-            buffer.write(content)
-        image_paths.append(file_path)
-
-    background_tasks.add_task(process_video_frames, task_id, image_paths, model, cache_key)
-    
-    return {"task_id": task_id}
+    try:
+        MAX_IMAGE_SIZE = 10 * 1024 * 1024  # 10 MB per image
+        
+        # Read the files, check size, compute hash, and save to disk
+        for idx, img in enumerate(images):
+            content = await img.read()
+            if len(content) > MAX_IMAGE_SIZE:
+                raise HTTPException(status_code=413, detail=f"Image {idx} exceeds maximum allowed size of 10MB.")
+                
+            hasher.update(content)
+            
+            file_path = os.path.join(temp_dir, f"{task_id}_{idx}.jpg")
+            with open(file_path, "wb") as buffer:
+                buffer.write(content)
+            image_paths.append(file_path)
+            
+        cache_key = hasher.hexdigest()
+        
+        if cache_key in CACHE:
+            # Cache hit! Cleanup temp dir and return immediately
+            shutil.rmtree(temp_dir, ignore_errors=True)
+            TASKS[task_id] = {
+                "status": "COMPLETED",
+                "results": CACHE[cache_key],
+                "error": None
+            }
+            return {"task_id": task_id}
+            
+        TASKS[task_id] = {"status": "RUNNING", "results": [], "error": None, "cache_key": cache_key}
+        
+        background_tasks.add_task(process_video_frames, task_id, image_paths, model, cache_key)
+        
+        return {"task_id": task_id}
+        
+    except Exception as e:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        raise HTTPException(status_code=500, detail=str(e))
 
 import traceback
 
