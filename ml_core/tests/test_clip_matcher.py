@@ -1,11 +1,15 @@
 import os
 import shutil
+import sys
+
+# Ensure ml_core is in the path regardless of where pytest is run from
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 import pytest
-from ml_core.clip_matcher import ClipMatcher
+from clip_matcher import ClipMatcher
 from PIL import Image
 
-TEST_DB_PATH = "./pytest_chroma_db"
+TEST_DB_PATH = os.path.join(os.path.dirname(__file__), "assets", "pytest_chroma_db")
 
 
 @pytest.fixture(scope="module")
@@ -45,12 +49,17 @@ def test_clip_matcher_red_image(matcher, dummy_images):
     ]
 
     # Test just the red image
-    top_tags = matcher.match([dummy_images["red"]], available_tags, top_k=1)
+    tags_dict = matcher.match([dummy_images["red"]], available_tags, top_k=1)
+    
+    # Check return structure
+    assert isinstance(tags_dict, dict)
+    assert "positive" in tags_dict
+    assert "negative" in tags_dict
 
     # Assert that a result was found
-    assert len(top_tags) > 0
+    assert len(tags_dict["positive"]) > 0
     # Assert that the red tag was correctly identified as the closest match
-    assert top_tags[0] == "a solid red color"
+    assert tags_dict["positive"][0] == "a solid red color"
 
 
 def test_clip_matcher_blue_image(matcher, dummy_images):
@@ -61,10 +70,10 @@ def test_clip_matcher_blue_image(matcher, dummy_images):
     ]
 
     # Test just the blue image
-    top_tags = matcher.match([dummy_images["blue"]], available_tags, top_k=1)
+    tags_dict = matcher.match([dummy_images["blue"]], available_tags, top_k=1)
 
-    assert len(top_tags) > 0
-    assert top_tags[0] == "a solid blue color"
+    assert len(tags_dict["positive"]) > 0
+    assert tags_dict["positive"][0] == "a solid blue color"
 
 
 def test_clip_matcher_averaging(matcher, dummy_images):
@@ -76,17 +85,18 @@ def test_clip_matcher_averaging(matcher, dummy_images):
 
     # Test both images (should average the embeddings)
     # The top 2 matches should naturally be the red and blue tags, ignoring the dog
-    top_tags = matcher.match(
+    tags_dict = matcher.match(
         [dummy_images["red"], dummy_images["blue"]], available_tags, top_k=2
     )
 
-    assert len(top_tags) == 2
-    assert "a solid red color" in top_tags
-    assert "a solid blue color" in top_tags
-    assert "a cute dog" not in top_tags
+    assert len(tags_dict["positive"]) == 2
+    assert "a solid red color" in tags_dict["positive"]
+    assert "a solid blue color" in tags_dict["positive"]
+    assert "a cute dog" not in tags_dict["positive"]
 
 
 def test_clip_matcher_empty_inputs(matcher, dummy_images):
     # Test graceful degradation with empty tags or images
-    assert matcher.match([dummy_images["red"]], []) == []
-    assert matcher.match([], ["a tag"]) == []
+    assert matcher.match([dummy_images["red"]], []) == {"positive": [], "negative": []}
+    assert matcher.match([], ["a tag"]) == {"positive": [], "negative": []}
+

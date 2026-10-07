@@ -1,3 +1,9 @@
+import os
+import sys
+
+# Ensure ml_core is in the path regardless of where pytest is run from
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 import pytest
 from unittest.mock import MagicMock, patch
 from PIL import Image
@@ -19,7 +25,7 @@ def test_gemini_matcher_success(MockClient, dummy_images):
     # Setup mock response
     mock_client_instance = MockClient.return_value
     mock_response = MagicMock()
-    mock_response.text = '["a solid red color"]'
+    mock_response.text = '{"positive": ["a solid red color"], "negative": ["a cute dog"]}'
     mock_client_instance.models.generate_content.return_value = mock_response
 
     # Initialize matcher (it will use the mocked client)
@@ -32,10 +38,11 @@ def test_gemini_matcher_success(MockClient, dummy_images):
     ]
     
     # Test matching
-    top_tags = matcher.match([dummy_images["red"]], available_tags, top_k=1)
+    tags_dict = matcher.match([dummy_images["red"]], available_tags, top_k=1)
     
-    assert len(top_tags) > 0
-    assert top_tags[0] == "a solid red color"
+    assert len(tags_dict["positive"]) > 0
+    assert tags_dict["positive"][0] == "a solid red color"
+    assert "a cute dog" in tags_dict["negative"]
     
     # Verify the client was called with correct arguments
     mock_client_instance.models.generate_content.assert_called_once()
@@ -50,7 +57,7 @@ def test_gemini_matcher_fallback(MockClient, dummy_images):
     # Setup mock response where Gemini hallucinates a bit but contains the tag inside JSON
     mock_client_instance = MockClient.return_value
     mock_response = MagicMock()
-    mock_response.text = '["I think it is a solid blue color", "a solid blue color", "hallucination"]'
+    mock_response.text = '{"positive": ["I think it is a solid blue color", "a solid blue color", "hallucination"], "negative": []}'
     mock_client_instance.models.generate_content.return_value = mock_response
 
     matcher = GeminiMatcher()
@@ -62,13 +69,13 @@ def test_gemini_matcher_fallback(MockClient, dummy_images):
     ]
     
     # Test matching
-    top_tags = matcher.match([dummy_images["red"]], available_tags, top_k=2)
+    tags_dict = matcher.match([dummy_images["red"]], available_tags, top_k=2)
     
-    assert len(top_tags) == 1
-    assert top_tags[0] == "a solid blue color"
+    assert len(tags_dict["positive"]) == 1
+    assert tags_dict["positive"][0] == "a solid blue color"
 
 def test_gemini_matcher_empty_inputs():
     with patch('google.genai.Client'):
         matcher = GeminiMatcher()
-        assert matcher.match(["dummy.jpg"], []) == []
-        assert matcher.match([], ["a tag"]) == []
+        assert matcher.match(["dummy.jpg"], []) == {"positive": [], "negative": []}
+        assert matcher.match([], ["a tag"]) == {"positive": [], "negative": []}

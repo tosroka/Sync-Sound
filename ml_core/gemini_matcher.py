@@ -16,7 +16,7 @@ class GeminiMatcher:
 
     def __init__(self, model_name: str = "gemini-3.8-flash"):
         self.client = genai.Client()
-        self.preferred_models = ["gemini-3.5-flash", "gemini-3.6-flash", "gemini-3.7-flash", "gemini-3.8-flash"]
+        self.preferred_models = ["gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash"]
 
     def match(
         self, image_paths: List[str], available_tags: List[str], top_k: int = 5
