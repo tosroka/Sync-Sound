@@ -9,7 +9,6 @@
     
     <main class="container">
       <div class="card upload-section">
-        <div class="upload-icon">📹</div>
         <h2>Upload Video</h2>
         <p class="upload-hint">Select a local video file to get started</p>
         
@@ -21,6 +20,10 @@
         <div v-if="videoFile" class="file-info fade-in">
           <span class="file-name">{{ videoFile.name }}</span> 
           <span class="file-size">({{ (videoFile.size / 1024 / 1024).toFixed(2) }} MB)</span>
+          
+          <div v-if="videoObjectUrl" class="video-preview-wrapper mt-3">
+            <video :src="videoObjectUrl" controls class="preview-video"></video>
+          </div>
         </div>
       </div>
 
@@ -30,7 +33,7 @@
             <label for="modelSelect">AI Engine:</label>
             <select id="modelSelect" v-model="selectedModel" :disabled="isProcessing" class="styled-select">
               <option value="clip">Local CLIP (Fast)</option>
-              <option value="gemini">Gemini API (Smart)</option>
+              <option value="gemini">Gemini API</option>
             </select>
           </div>
           
@@ -49,12 +52,21 @@
       <!-- Hidden canvas for frame extraction -->
       <canvas ref="canvasRef" style="display: none;"></canvas>
 
-      <div v-if="results.length > 0" class="card results-section fade-in">
-        <h2>🎵 Recommended Tags / Songs</h2>
+      <div v-if="recommendedSongs.length > 0" class="card results-section fade-in">
+        <h2>Recommended Songs</h2>
         <ul class="results-list">
-          <li v-for="(tag, idx) in results" :key="idx" class="result-item">
-            <span class="result-rank">#{{ idx + 1 }}</span>
-            <span class="result-name">{{ tag }}</span>
+          <li v-for="(song, idx) in recommendedSongs" :key="idx" class="result-item song-item">
+            <div class="song-info">
+              <span class="result-rank">#{{ idx + 1 }}</span>
+              <div class="song-details">
+                <span class="song-title">{{ song.title }}</span>
+                <span class="song-author">by {{ song.author }}</span>
+                <span class="song-score">Match Score: {{ song.score }}</span>
+              </div>
+            </div>
+            <audio controls class="song-player">
+              <source :src="`${API_URL}/music/${song.filename}`" type="audio/mpeg">
+            </audio>
           </li>
         </ul>
       </div>
@@ -66,6 +78,13 @@
         </button>
         
         <div v-show="showDebug" class="debug-content slide-down">
+          <div v-if="recommendedTags.length > 0" class="debug-tags-section">
+            <h3>ML Extracted Tags</h3>
+            <div class="tags-container">
+              <span v-for="tag in recommendedTags" :key="tag" class="debug-tag">{{ tag }}</span>
+            </div>
+          </div>
+
           <h3>Extracted Frames (Sent to Backend)</h3>
           <div class="frames-grid">
             <div v-for="(frame, idx) in extractedFrames" :key="idx" class="frame-wrapper">
@@ -83,10 +102,12 @@
 import { ref } from 'vue'
 
 const videoFile = ref(null)
+const videoObjectUrl = ref('')
 const isProcessing = ref(false)
 const statusMessage = ref('')
 const extractedFrames = ref([])
-const results = ref([])
+const recommendedTags = ref([])
+const recommendedSongs = ref([])
 const selectedModel = ref('clip')
 const canvasRef = ref(null)
 const showDebug = ref(false)
@@ -97,8 +118,13 @@ const onVideoSelected = (event) => {
   const file = event.target.files[0]
   if (file) {
     videoFile.value = file
+    if (videoObjectUrl.value) {
+      URL.revokeObjectURL(videoObjectUrl.value)
+    }
+    videoObjectUrl.value = URL.createObjectURL(file)
     extractedFrames.value = []
-    results.value = []
+    recommendedTags.value = []
+    recommendedSongs.value = []
     statusMessage.value = ''
     showDebug.value = false
   }
@@ -168,13 +194,21 @@ const pollStatus = async (taskId) => {
     if (data.status === 'COMPLETED') {
       const resultRes = await fetch(`${API_URL}/tasks/${taskId}/results`)
       const resultData = await resultRes.json()
-      results.value = resultData.results
+      
+      if (resultData.results && resultData.results.songs) {
+        recommendedTags.value = resultData.results.tags
+        recommendedSongs.value = resultData.results.songs
+      } else {
+        // Fallback for older responses
+        recommendedTags.value = resultData.results || []
+      }
+      
       isProcessing.value = false
       statusMessage.value = 'Done!'
       break
     } else if (data.status === 'ERROR') {
       isProcessing.value = false
-      statusMessage.value = 'Error during ML processing!'
+      statusMessage.value = `Error: ${data.error || 'Unknown error during ML processing'}`
       break
     }
     
@@ -189,7 +223,8 @@ const startProcess = async () => {
   isProcessing.value = true
   statusMessage.value = 'Extracting frames in browser...'
   extractedFrames.value = []
-  results.value = []
+  recommendedTags.value = []
+  recommendedSongs.value = []
   
   try {
     const frames = await extractFrames(videoFile.value, 5)
@@ -340,6 +375,18 @@ body {
   font-weight: normal;
 }
 
+.video-preview-wrapper {
+  margin-top: 1rem;
+}
+
+.preview-video {
+  max-width: 100%;
+  max-height: 300px;
+  border-radius: 8px;
+  background-color: #000;
+  box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
+}
+
 .controls-section {
   display: flex;
   flex-direction: column;
@@ -472,29 +519,58 @@ body {
   margin: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 1rem;
 }
 
 .result-item {
   display: flex;
-  align-items: center;
+  flex-direction: column;
   padding: 1rem;
   background-color: #f9fafb;
   border-radius: 8px;
   border-left: 4px solid #8b5cf6;
 }
 
+.song-info {
+  display: flex;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+
 .result-rank {
   font-weight: 700;
   color: #8b5cf6;
   margin-right: 1rem;
+  font-size: 1.2rem;
   width: 2rem;
 }
 
-.result-name {
-  font-size: 1.05rem;
-  font-weight: 500;
-  color: #1f2937;
+.song-details {
+  display: flex;
+  flex-direction: column;
+}
+
+.song-title {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #111827;
+}
+
+.song-author {
+  font-size: 0.9rem;
+  color: #6b7280;
+}
+
+.song-score {
+  font-size: 0.8rem;
+  color: #10b981;
+  font-weight: 600;
+  margin-top: 0.25rem;
+}
+
+.song-player {
+  width: 100%;
+  height: 40px;
 }
 
 .debug-section {
@@ -528,7 +604,27 @@ body {
 .debug-content h3 {
   font-size: 1rem;
   margin-top: 0;
+  margin-bottom: 0.75rem;
   color: #4b5563;
+}
+
+.debug-tags-section {
+  margin-bottom: 1.5rem;
+}
+
+.tags-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.debug-tag {
+  background-color: #ede9fe;
+  color: #6d28d9;
+  padding: 0.25rem 0.75rem;
+  border-radius: 16px;
+  font-size: 0.85rem;
+  font-weight: 500;
 }
 
 .frames-grid {
