@@ -16,6 +16,8 @@ from gemini_matcher import GeminiMatcher
 
 # In-memory storage for tasks
 TASKS: Dict[str, Dict] = {}
+# In-memory storage for cached results based on image hashes
+CACHE: Dict[str, Dict] = {}
 
 import csv
 
@@ -72,7 +74,7 @@ app.add_middleware(
 music_dir = os.path.join(os.path.dirname(__file__), "..", "music_library")
 app.mount("/music", StaticFiles(directory=music_dir), name="music")
 
-async def process_video_frames(task_id: str, image_paths: List[str], model_type: str):
+async def process_video_frames(task_id: str, image_paths: List[str], model_type: str, cache_key: str = None):
     try:
         if model_type not in matchers:
             raise ValueError(f"Model '{model_type}' is not initialized or invalid.")
@@ -112,6 +114,8 @@ async def process_video_frames(task_id: str, image_paths: List[str], model_type:
             "tags": tags_dict,
             "songs": top_songs
         }
+        if cache_key:
+            CACHE[cache_key] = TASKS[task_id]["results"]
     except Exception as e:
         print(f"Error processing task {task_id}:")
         traceback.print_exc()
@@ -129,22 +133,44 @@ async def create_task(
     images: List[UploadFile] = File(...),
     model: str = Form("clip")
 ):
+    import hashlib
+    hasher = hashlib.sha256()
+    hasher.update(model.encode('utf-8'))
+    
+    # Read all images into memory to compute hash
+    image_contents = []
+    for img in images:
+        content = await img.read()
+        hasher.update(content)
+        image_contents.append(content)
+        
+    cache_key = hasher.hexdigest()
     task_id = str(uuid.uuid4())
-    TASKS[task_id] = {"status": "RUNNING", "results": [], "error": None}
+    
+    if cache_key in CACHE:
+        # Cache hit! Create a completed task immediately
+        TASKS[task_id] = {
+            "status": "COMPLETED",
+            "results": CACHE[cache_key],
+            "error": None
+        }
+        return {"task_id": task_id}
+        
+    TASKS[task_id] = {"status": "RUNNING", "results": [], "error": None, "cache_key": cache_key}
     
     # Save uploaded images to a temporary local storage
     # In a real app with MinIO, we would upload them there and pass URLs/paths
     os.makedirs("/tmp/ml_core_images", exist_ok=True)
     image_paths = []
     
-    for idx, img in enumerate(images):
+    for idx, content in enumerate(image_contents):
         # We assume they are image files
         file_path = f"/tmp/ml_core_images/{task_id}_{idx}.jpg"
         with open(file_path, "wb") as buffer:
-            buffer.write(await img.read())
+            buffer.write(content)
         image_paths.append(file_path)
 
-    background_tasks.add_task(process_video_frames, task_id, image_paths, model)
+    background_tasks.add_task(process_video_frames, task_id, image_paths, model, cache_key)
     
     return {"task_id": task_id}
 
