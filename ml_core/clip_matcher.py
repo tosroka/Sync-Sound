@@ -72,9 +72,9 @@ class ClipMatcher:
 
     def match(
         self, image_paths: list[str], available_tags: list[str], top_k: int = 5
-    ) -> list[str]:
+    ) -> dict:
         if not available_tags or not image_paths:
-            return []
+            return {"positive": [], "negative": []}
 
         # 1. Ensure all candidate tags are embedded and cached in ChromaDB
         self._get_or_create_tag_embeddings(available_tags)
@@ -100,15 +100,17 @@ class ClipMatcher:
         image_embedding = image_feature.cpu().numpy().tolist()[0]
 
         # 3. Query ChromaDB to find the closest tags, restricting the search to `available_tags`
+        # We query for ALL available tags to get both the best and worst matches
         results = self.collection.query(
             query_embeddings=[image_embedding],
-            n_results=min(top_k, len(available_tags)),
+            n_results=len(available_tags),
             where={"tag": {"$in": available_tags}},
         )
 
         if results["ids"] and len(results["ids"]) > 0:
-            return results["ids"][
-                0
-            ]  # ChromaDB returns a list of lists (one per query vector)
+            all_sorted_tags = results["ids"][0]
+            top_positive = all_sorted_tags[:top_k]
+            top_negative = all_sorted_tags[-top_k:] if len(all_sorted_tags) >= top_k else []
+            return {"positive": top_positive, "negative": top_negative}
 
-        return []
+        return {"positive": [], "negative": []}

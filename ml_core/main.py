@@ -80,7 +80,7 @@ async def process_video_frames(task_id: str, image_paths: List[str], model_type:
         matcher = matchers[model_type]
         
         # Run the heavy ML task in a thread to not block the asyncio event loop
-        top_tags = await asyncio.to_thread(matcher.match, image_paths, AVAILABLE_TAGS, top_k=5)
+        tags_dict = await asyncio.to_thread(matcher.match, image_paths, AVAILABLE_TAGS, top_k=5)
         
         # Calculate scores for songs
         song_scores = []
@@ -90,8 +90,10 @@ async def process_video_frames(task_id: str, image_paths: List[str], model_type:
                 reader = csv.DictReader(f)
                 for row in reader:
                     song_tags = [t.strip().lower() for t in row.get("tags", "").split(",") if t.strip()]
-                    # count overlap with top_tags
-                    score = sum(1 for tag in top_tags if tag.lower() in song_tags)
+                    # count overlap with tags_dict
+                    pos_score = sum(1 for tag in tags_dict.get("positive", []) if tag.lower() in song_tags)
+                    neg_score = sum(1 for tag in tags_dict.get("negative", []) if tag.lower() in song_tags)
+                    score = pos_score - neg_score
                     # We can include songs even with 0 score if we want, but better to rank them
                     song_scores.append({
                         "id": row.get("id"),
@@ -107,7 +109,7 @@ async def process_video_frames(task_id: str, image_paths: List[str], model_type:
 
         TASKS[task_id]["status"] = "COMPLETED"
         TASKS[task_id]["results"] = {
-            "tags": top_tags,
+            "tags": tags_dict,
             "songs": top_songs
         }
     except Exception as e:

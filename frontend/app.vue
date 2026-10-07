@@ -78,9 +78,24 @@
         </button>
         
         <div v-show="showDebug" class="debug-content slide-down">
-          <div v-if="recommendedTags.length > 0" class="debug-tags-section">
-            <h3>ML Extracted Tags</h3>
-            <div class="tags-container">
+          <div v-if="recommendedTags && (recommendedTags.positive?.length || recommendedTags.negative?.length || recommendedTags.length > 0)" class="debug-tags-section">
+            
+            <div v-if="recommendedTags.positive && recommendedTags.positive.length > 0" class="tags-group">
+              <h4>Positive Matches:</h4>
+              <div class="tags-container">
+                <span v-for="tag in recommendedTags.positive" :key="'pos-'+tag" class="debug-tag positive-tag">{{ tag }}</span>
+              </div>
+            </div>
+
+            <div v-if="recommendedTags.negative && recommendedTags.negative.length > 0" class="tags-group mt-3">
+              <h4>Negative Matches:</h4>
+              <div class="tags-container">
+                <span v-for="tag in recommendedTags.negative" :key="'neg-'+tag" class="debug-tag negative-tag">{{ tag }}</span>
+              </div>
+            </div>
+
+            <!-- Fallback for older arrays -->
+            <div v-if="Array.isArray(recommendedTags) && recommendedTags.length > 0" class="tags-container">
               <span v-for="tag in recommendedTags" :key="tag" class="debug-tag">{{ tag }}</span>
             </div>
           </div>
@@ -204,7 +219,7 @@ const pollStatus = async (taskId) => {
       }
       
       isProcessing.value = false
-      statusMessage.value = 'Done!'
+      statusMessage.value = 'Finished'
       break
     } else if (data.status === 'ERROR') {
       isProcessing.value = false
@@ -625,6 +640,26 @@ body {
   border-radius: 16px;
   font-size: 0.85rem;
   font-weight: 500;
+}
+
+.positive-tag {
+  background-color: #d1fae5;
+  color: #059669;
+}
+
+.negative-tag {
+  background-color: #fee2e2;
+  color: #dc2626;
+}
+
+.tags-group h4 {
+  margin: 0 0 0.5rem 0;
+  font-size: 0.9rem;
+  color: #4b5563;
+}
+
+.mt-3 {
+  margin-top: 1rem;
 }
 
 .frames-grid {

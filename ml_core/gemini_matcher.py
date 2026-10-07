@@ -20,17 +20,18 @@ class GeminiMatcher:
 
     def match(
         self, image_paths: List[str], available_tags: List[str], top_k: int = 5
-    ) -> List[str]:
+    ) -> dict:
         if not available_tags or not image_paths:
-            return []
+            return {"positive": [], "negative": []}
 
         pil_images = [Image.open(path).convert("RGB") for path in image_paths]
         
         contents = pil_images + [
-            f"Here are some frames from a video. Which of the following tags best describe the content?\n"
+            f"Here are some frames from a video.\n"
             f"Tags: {available_tags}\n\n"
-            f"Return exactly the top {top_k} matching tags from the list, ordered by relevance (best match first).\n"
-            f"Return them as a JSON array of strings."
+            f"Based on the content of the video frames, please select exactly the top {top_k} tags that BEST describe the video (positive), and the top {top_k} tags that LEAST describe the video / definitely do NOT fit (negative).\n"
+            f"Return a JSON object strictly following this schema:\n"
+            f'{{"positive": ["tag1", "tag2"], "negative": ["tag1", "tag2"]}}'
         ]
 
         response = None
@@ -61,15 +62,20 @@ class GeminiMatcher:
 
         try:
             matched_tags = json.loads(response.text)
-            if not isinstance(matched_tags, list):
-                matched_tags = [str(matched_tags)]
+            if not isinstance(matched_tags, dict):
+                matched_tags = {"positive": [], "negative": []}
         except json.JSONDecodeError:
-            matched_tags = [response.text.strip().strip('"').strip("'")]
+            matched_tags = {"positive": [], "negative": []}
 
-        valid_tags = []
-        for tag in matched_tags:
-            tag_str = str(tag)
-            if tag_str in available_tags and tag_str not in valid_tags:
-                valid_tags.append(tag_str)
-                
-        return valid_tags[:top_k]
+        # Filter out hallucinations
+        result_dict = {"positive": [], "negative": []}
+        for key in ["positive", "negative"]:
+            for tag in matched_tags.get(key, []):
+                tag_str = str(tag)
+                if tag_str in available_tags and tag_str not in result_dict[key]:
+                    result_dict[key].append(tag_str)
+                    
+        return {
+            "positive": result_dict["positive"][:top_k],
+            "negative": result_dict["negative"][:top_k]
+        }
