@@ -4,6 +4,10 @@ import uuid
 from contextlib import asynccontextmanager
 from typing import Dict, List
 
+from dotenv import load_dotenv
+# Load .env from the project root
+load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
+
 from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import JSONResponse
 
@@ -13,12 +17,24 @@ from gemini_matcher import GeminiMatcher
 # In-memory storage for tasks
 TASKS: Dict[str, Dict] = {}
 
-# Mock songs database tags (in reality, read from CSV)
-AVAILABLE_TAGS = [
-    "acoustic", "electronic", "rock", "pop", "jazz", "classical",
-    "upbeat", "melancholic", "energetic", "calm", "vocal", "instrumental",
-    "a solid red color", "a solid blue color" # for our dummy tests
-]
+import csv
+
+def load_available_tags():
+    tags = set()
+    # Resolve path relative to this file
+    csv_path = os.path.join(os.path.dirname(__file__), "..", "music_library", "metadata.csv")
+    if os.path.exists(csv_path):
+        with open(csv_path, "r", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                row_tags = [t.strip() for t in row.get("tags", "").split(",") if t.strip()]
+                tags.update(row_tags)
+    else:
+        print("Warning: metadata.csv not found, using fallback tags.")
+        tags = {"snow", "christmas", "summer", "sunny", "animal", "pop", "jazz", "classical", "electronic", "concert", "calm", "energetic", "bright", "dark"}
+    return list(tags)
+
+AVAILABLE_TAGS = load_available_tags()
 
 # Initialize matchers at startup
 matchers = {}
@@ -40,6 +56,8 @@ async def lifespan(app: FastAPI):
 
 from fastapi.middleware.cors import CORSMiddleware
 
+from fastapi.staticfiles import StaticFiles
+
 app = FastAPI(lifespan=lifespan)
 
 app.add_middleware(
@@ -49,6 +67,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Mount the music library to serve MP3 files
+music_dir = os.path.join(os.path.dirname(__file__), "..", "music_library")
+app.mount("/music", StaticFiles(directory=music_dir), name="music")
 
 async def process_video_frames(task_id: str, image_paths: List[str], model_type: str):
     try:
@@ -60,9 +82,37 @@ async def process_video_frames(task_id: str, image_paths: List[str], model_type:
         # Run the heavy ML task in a thread to not block the asyncio event loop
         top_tags = await asyncio.to_thread(matcher.match, image_paths, AVAILABLE_TAGS, top_k=5)
         
+        # Calculate scores for songs
+        song_scores = []
+        csv_path = os.path.join(music_dir, "metadata.csv")
+        if os.path.exists(csv_path):
+            with open(csv_path, "r", encoding="utf-8") as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    song_tags = [t.strip().lower() for t in row.get("tags", "").split(",") if t.strip()]
+                    # count overlap with top_tags
+                    score = sum(1 for tag in top_tags if tag.lower() in song_tags)
+                    # We can include songs even with 0 score if we want, but better to rank them
+                    song_scores.append({
+                        "id": row.get("id"),
+                        "title": row.get("title"),
+                        "author": row.get("author"),
+                        "filename": row.get("filename"),
+                        "score": score
+                    })
+        
+        # Sort by score descending
+        song_scores.sort(key=lambda x: x["score"], reverse=True)
+        top_songs = song_scores[:3]
+
         TASKS[task_id]["status"] = "COMPLETED"
-        TASKS[task_id]["results"] = top_tags
+        TASKS[task_id]["results"] = {
+            "tags": top_tags,
+            "songs": top_songs
+        }
     except Exception as e:
+        print(f"Error processing task {task_id}:")
+        traceback.print_exc()
         TASKS[task_id]["status"] = "ERROR"
         TASKS[task_id]["error"] = str(e)
     finally:
@@ -96,11 +146,16 @@ async def create_task(
     
     return {"task_id": task_id}
 
+import traceback
+
 @app.get("/tasks/{task_id}/status")
 async def get_task_status(task_id: str):
     if task_id not in TASKS:
         return {"status": "UNKNOWN_ID"}
-    return {"status": TASKS[task_id]["status"]}
+    task = TASKS[task_id]
+    if task["status"] == "ERROR":
+        return {"status": "ERROR", "error": task.get("error", "Unknown error")}
+    return {"status": task["status"]}
 
 @app.get("/tasks/{task_id}/results")
 async def get_task_results(task_id: str):

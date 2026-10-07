@@ -1,5 +1,6 @@
 import json
 import os
+import time
 from typing import List
 
 from google import genai
@@ -14,9 +15,8 @@ class GeminiMatcher:
     """
 
     def __init__(self, model_name: str = "gemini-3.8-flash"):
-        # The genai client will automatically pick up GEMINI_API_KEY from the environment
         self.client = genai.Client()
-        self.model_name = model_name
+        self.preferred_models = ["gemini-3.5-flash", "gemini-3.6-flash", "gemini-3.7-flash", "gemini-3.8-flash"]
 
     def match(
         self, image_paths: List[str], available_tags: List[str], top_k: int = 5
@@ -24,10 +24,8 @@ class GeminiMatcher:
         if not available_tags or not image_paths:
             return []
 
-        # Load images
         pil_images = [Image.open(path).convert("RGB") for path in image_paths]
         
-        # We can pass PIL images directly to the genai SDK
         contents = pil_images + [
             f"Here are some frames from a video. Which of the following tags best describe the content?\n"
             f"Tags: {available_tags}\n\n"
@@ -35,25 +33,39 @@ class GeminiMatcher:
             f"Return them as a JSON array of strings."
         ]
 
-        response = self.client.models.generate_content(
-            model=self.model_name,
-            contents=contents,
-            config=types.GenerateContentConfig(
-                temperature=0.0,  # We want a deterministic, factual choice
-                response_mime_type="application/json",
-            ),
-        )
+        response = None
+        last_error = None
+        
+        # Try multiple stable endpoints to avoid 503 spikes
+        for model in self.preferred_models:
+            try:
+                print(f"Attempting inference with {model}...")
+                response = self.client.models.generate_content(
+                    model=model,
+                    contents=contents,
+                    config=types.GenerateContentConfig(
+                        temperature=0.0,
+                        response_mime_type="application/json",
+                    ),
+                )
+                print(f"Successfully generated content with {model}")
+                break
+            except Exception as e:
+                last_error = e
+                print(f"Model {model} failed: {e}")
+                time.sleep(1) # Backoff before trying next model
+                continue
+                
+        if response is None:
+            raise Exception(f"All preferred Gemini models failed. Last error: {last_error}")
 
         try:
-            # Parse the JSON array
             matched_tags = json.loads(response.text)
             if not isinstance(matched_tags, list):
                 matched_tags = [str(matched_tags)]
         except json.JSONDecodeError:
-            # Fallback if Gemini didn't return valid JSON
             matched_tags = [response.text.strip().strip('"').strip("'")]
 
-        # Filter out hallucinations and ensure exact matching
         valid_tags = []
         for tag in matched_tags:
             tag_str = str(tag)
